@@ -1,0 +1,6 @@
+layer,candidates_in,candidates_out,dominant_fail_reason
+0_population,72,72,n/a
+1_is_oos_sensitivity,72,13,oos_sharpe_ok
+2_walkforward,13,7,mean_wf_sharpe_below_min
+3_stress_replay,7,7,n/a
+4_montecarlo_dsr,7,0,permutation_test_failed

@@ -1,0 +1,25 @@
+{
+  "sigma_sr_cross_section": 0.0060568882705503485,
+  "n_population": 72,
+  "best_full_sample_sharpe_ann": 0.7451704035530662,
+  "calm_windows": {
+    "SPXUSD": [
+      "2021-06-07",
+      "2021-07-07"
+    ],
+    "ETHUSD": [
+      "2023-07-18",
+      "2023-08-17"
+    ],
+    "USDJPY": [
+      "2021-08-18",
+      "2021-09-17"
+    ],
+    "XAUUSD": [
+      "2023-08-21",
+      "2023-09-20"
+    ]
+  },
+  "n_breakout": 48,
+  "n_session_reversion": 24
+}

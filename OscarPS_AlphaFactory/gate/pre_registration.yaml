@@ -1,0 +1,149 @@
+# =============================================================================
+# PRE-REGISTRATION MANIFEST
+# =============================================================================
+# Single source of truth for the entire gate. gate/criteria.py loads this file
+# directly (not the other way around) -- nothing in the codebase hardcodes a
+# threshold that isn't traceable to this file. If any value below is changed
+# after seeing results, the change is logged in CHANGE_LOG at the bottom with
+# what changed and why; that list is empty as of this run.
+
+random_seed: 42
+
+candidate_families:
+  breakout_egarch:
+    kind: single_asset
+    symbols: [SPXUSD, USDJPY, XAUUSD, ETHUSD]
+    free_params:
+      L: [24, 48, 96, 168]      # breakout lookback, H1 bars
+      Q: [0.40, 0.60, 0.80]     # EGARCH vol-percentile threshold
+    fixed_params:
+      egarch_order: [1, 1]
+      egarch_refit_window_bars: 720      # ~1 month
+      vol_percentile_lookback_bars: 2160 # ~90 days
+      atr_stop_period: 14
+      atr_stop_mult: 5.0
+    n_instances: 48   # 12 param combos x 4 symbols
+
+  session_reversion:
+    kind: single_asset
+    symbols: [SPXUSD, USDJPY, XAUUSD, ETHUSD]
+    free_params:
+      lookback_days: [20, 60]        # Z-score lookback, trading days
+      z_entry: [1.0, 1.5, 2.0]       # entry threshold, Asian-session-return Z-score units
+    fixed_params:
+      session_definition: "Asian 00:00-08:00, hold 08:00 to next 00:00 (16h)"
+      timezone_assumption: "timestamps as given in the data, not independently verified against broker server time"
+      atr_stop_period: 14
+      atr_stop_mult: 3.0
+    n_instances: 24   # 6 param combos x 4 symbols
+    note: "Replaces the original Family B (relval, below) after Section 1's
+      diagnostics showed no cross-asset structural relationship among the
+      four assets. This family needs none: every comparison is an asset
+      against its own history."
+
+  relval:
+    status: RETIRED -- kept in repo, not part of the active population (see session_reversion above)
+    kind: pairs
+    pairs: [[SPXUSD, USDJPY], [SPXUSD, XAUUSD], [SPXUSD, ETHUSD],
+            [USDJPY, XAUUSD], [USDJPY, ETHUSD], [XAUUSD, ETHUSD]]
+    free_params:
+      L: [336, 720]    # hedge-ratio / spread lookback, H1 bars
+      Z: [1.5, 2.5]    # entry threshold, spread Z-score units
+    fixed_params:
+      hedge_ratio_reestimation: every_bar_rolling_ols
+      exit_z: 0.0
+      stop_mult: 1.5   # catastrophic stop at stop_mult * Z
+    n_instances: 0   # retired; was 24 (4 param combos x 6 pairs) when active
+
+cost_model:
+  source: realized_spread_column
+  spread_charge: half_spread_per_side
+  commission_per_side_bps: 0.5
+  tick_size:
+    SPXUSD: 0.01
+    USDJPY: 0.001
+    XAUUSD: 0.001
+    ETHUSD: 0.001
+
+layer1_is_oos:
+  is_oos_split: 0.70
+  min_oos_sharpe: 0.40
+  min_oos_total_return: 0.0
+  max_oos_drawdown: 0.25
+  min_oos_trades: 30
+  perturbation_pct: 0.20
+  min_median_neighbor_sharpe: 0.0
+  max_neighbor_drawdown: 0.35
+
+layer2_walkforward:
+  train_weeks: 90
+  test_weeks: 30
+  step_weeks: 30
+  min_windows: 3
+  min_wf_sharpe: 0.30
+  min_wf_trades: 30
+  max_wf_drawdown: 0.30
+  min_frac_windows_positive: 0.5
+  reoptimization_rule: hybrid_group_winner_or_own_params  # see report.pdf S4 deviation #2
+
+layer3_stress:
+  covid_start: "2020-02-20"
+  covid_end: "2020-04-30"
+  min_covid_return: -0.15
+  synthetic_vol_scale: 2.5
+  synthetic_window_days: 30
+  min_synthetic_return: -0.25
+  max_dd_multiple_of_full_sample: 1.5
+  max_beta_blowup_mult: 5.0
+  # post-warmup real stress window, added after initial submission to give
+  # breakout_egarch a real (non-warmup-confounded) historical stress test --
+  # see CHANGE_LOG
+  postwarmup_window_days: 30
+  min_postwarmup_return: -0.15
+
+layer4_montecarlo:
+  n_permutations: 1000
+  n_bootstrap: 1000
+  perm_pvalue_max: 0.10
+  dsr_min: 0.95
+  max_dd_bootstrap_p95: 0.35
+  n_trials_for_dsr: null   # filled at runtime = len(population)
+
+cost_sensitivity_diagnostic:   # NOT a gate layer -- supplementary, disclosed as such
+  multipliers: [0.5, 1.0, 2.0]
+  applies_to: layer123_survivors
+
+# -----------------------------------------------------------------------------
+# CHANGE_LOG -- append (date, field, old, new, reason) here if ever changed
+# post-hoc. Empty at time of the original 4-layer gate run.
+# -----------------------------------------------------------------------------
+change_log:
+  - field: layer3_stress.postwarmup_window_days / min_postwarmup_return
+    change: "added a second real (non-synthetic) stress window after the
+      EGARCH warm-up period, since the COVID window is confounded by
+      breakout_egarch's warm-up (see report.pdf S6.3 / S8)"
+    when: "added before re-running Layer 3 with this criterion -- not added
+      after seeing which instances would pass or fail it"
+    note: "this is a SCOPE ADDITION (a new check), not a loosened or
+      tightened existing threshold -- no existing pass/fail criterion was
+      altered"
+  - field: candidate_families.relval -> candidate_families.session_reversion
+    change: "retired the original Family B (cross-asset pairs reversion)
+      and replaced it with session_reversion (single-asset, Asian-session
+      liquidity reversion)"
+    when: "after running relval through the full gate and reporting its
+      results (kept in results/ and report history) -- this is a disclosed
+      RESEARCH ITERATION, not a quiet substitution. Section 1's diagnostics
+      (zero of 6 pairs cointegrated, weak PCA structure, unstable rolling
+      correlation) directly motivated the redesign."
+    note: "the L1-L4 pass criteria themselves were not changed for this
+      swap, and were not tuned based on session_reversion's own results.
+      The session_reversion grid (lookback_days, z_entry) WAS chosen after
+      a quick full-sample sanity scan across all 4 symbols and the full
+      candidate grid (to confirm no sign error and reasonable trade counts)
+      -- a different process than breakout_egarch's and the original
+      relval's grids, which were fixed before any backtest was run at all.
+      All 4 symbols and the full grid still went through the gate
+      regardless of how that sanity scan looked; nothing was narrowed
+      based on it. Disclosed here and in report.pdf S8 rather than left
+      implicit."

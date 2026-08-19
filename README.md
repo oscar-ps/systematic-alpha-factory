@@ -1,5 +1,5 @@
 [README.md](https://github.com/user-attachments/files/31220828/README.md)
-# The Alpha Factory — Candidate Submission
+# The Alpha Factory
 
 EGARCH-conditioned volatility breakout (single-asset) + cross-asset
 relative-value reversion (pairs), pushed through one pre-registered 4-layer
